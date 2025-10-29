@@ -19,6 +19,9 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"github.com/lithammer/fuzzysearch/fuzzy"
 	"gopkg.in/yaml.v3"
+
+    "github.com/nicksnyder/go-i18n/v2/i18n"
+    "golang.org/x/text/language"
 )
 
 // Version information set at build time
@@ -26,6 +29,7 @@ var (
 	version   string
 	commit    string
 	buildTime string
+	bundle *i18n.Bundle
 )
 
 // Minimum supported configuration version
@@ -197,10 +201,44 @@ func loadHTMLTemplate(templatePath string) {
 
 // --- Main HTTP Handlers ---
 
-// serveHTMLTemplate serves the static index.html file, injecting environment variables.
+
+// serveHTMLTemplate renders the HTML template with i18n support using go-i18n
 func serveHTMLTemplate(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write(htmlTemplate)
+    // Read the language from the environment variable APP_LANG
+    lang := os.Getenv("APP_LANG")
+    if lang == "" {
+        lang = "en" // Default to English if not se
+    }
+    // Create a localizer for the selected language
+    localizer := i18n.NewLocalizer(bundle, lang)
+
+    // Parse the HTML template and register the translation function "T"
+    tmpl := template.Must(template.New("index").Funcs(template.FuncMap{
+        "T": func(id string) string {		
+            // Use the localizer to translate the given message ID
+            msg, err := localizer.Localize(&i18n.LocalizeConfig{MessageID: id})
+            if err != nil {
+                return id // Fallback: return the message ID if translation is missing
+            }
+            return msg
+        },
+    }).Parse(string(htmlTemplate)))
+
+    // Set the response content type and execute the template
+    w.Header().Set("Content-Type", "text/html; charset=utf-8")
+    tmpl.Execute(w, nil)
+}
+
+// initI18n initializes the i18n bundle and loads translation files
+func initI18n() {
+    // Create a new i18n bundle with English as the default language
+    bundle = i18n.NewBundle(language.English)
+    // Register the TOML unmarshal function for loading translation files
+    bundle.RegisterUnmarshalFunc("toml", i18n.UnmarshalTOML)
+    
+    // Load translation files for supported languages
+    bundle.MustLoadMessageFile("active.en.toml")
+    bundle.MustLoadMessageFile("active.de.toml")
 }
 
 // servicesHandler is the main API endpoint. It fetches, processes, and returns all service data.
@@ -1113,7 +1151,7 @@ func loadConfiguration() {
 // --- Main Application Setup ---
 func main() {
 	loadConfiguration()
-
+	initI18n()
 	const templatePath = "template"
 	loadHTMLTemplate(templatePath)
 
