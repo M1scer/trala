@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"io/fs"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/lithammer/fuzzysearch/fuzzy"
@@ -229,17 +230,25 @@ func serveHTMLTemplate(w http.ResponseWriter, r *http.Request) {
     tmpl.Execute(w, nil)
 }
 
-// initI18n initializes the i18n bundle and loads translation files
+// initI18n initializes the i18n bundle and loads all .toml files from the translations directory
 func initI18n() {
-    // Create a new i18n bundle with English as the default language
     bundle = i18n.NewBundle(language.English)
-    // Register the TOML unmarshal function for loading translation files
     bundle.RegisterUnmarshalFunc("toml", i18n.UnmarshalTOML)
-    
-    // Load translation files for supported languages
-    bundle.MustLoadMessageFile("active.en.toml")
-    bundle.MustLoadMessageFile("active.de.toml")
-}
+
+    // Walk through the translations directory and load all .toml files
+    err := filepath.Walk("translations", func(path string, info fs.FileInfo, err error) error {
+        if err != nil {
+            return err
+        }
+        if !info.IsDir() && filepath.Ext(path) == ".toml" {
+            _, loadErr := bundle.LoadMessageFile(path)
+            if loadErr != nil {
+                return loadErr
+            }
+        }
+        return nil
+    })
+
 
 // servicesHandler is the main API endpoint. It fetches, processes, and returns all service data.
 func servicesHandler(w http.ResponseWriter, r *http.Request) {
